@@ -1,4 +1,5 @@
 const STORAGE_KEY = "black-bracket-studio-v1";
+const JPG_EXPORT_CLASS = "jpg-export-surface";
 
 const form = document.querySelector("#tournament-form");
 const eventNameInput = document.querySelector("#event-name");
@@ -16,7 +17,6 @@ const summaryCount = document.querySelector("#summary-count");
 const summaryRounds = document.querySelector("#summary-rounds");
 const summaryBracket = document.querySelector("#summary-bracket");
 const summaryByes = document.querySelector("#summary-byes");
-const JPG_EXPORT_CLASS = "jpg-export-surface";
 
 const state = {
   brackets: loadStoredBrackets(),
@@ -89,27 +89,6 @@ function shuffleArray(items) {
   return copy;
 }
 
-function getRoundLabel(roundIndex, totalRounds, matchCount) {
-  if (roundIndex === totalRounds - 1) return "결승";
-  if (roundIndex === totalRounds - 2) return "준결승";
-  return `${matchCount * 2}강`;
-}
-
-function previousPowerOfTwo(value) {
-  let size = 1;
-  while (size * 2 <= value) size *= 2;
-  return size;
-}
-
-function getMainBracketLabel(participantCount) {
-  if (participantCount <= 1) return "대기";
-
-  const isPowerOfTwo = participantCount === nextPowerOfTwo(participantCount);
-  if (isPowerOfTwo) return `${participantCount}강`;
-
-  return `${previousPowerOfTwo(participantCount)}강 본선`;
-}
-
 function createSlots(participants, bracketSize) {
   const seedOrder = getSeedOrder(bracketSize);
   const slots = new Array(bracketSize).fill(null);
@@ -121,125 +100,39 @@ function createSlots(participants, bracketSize) {
   return slots;
 }
 
-function createRounds(participants) {
+function createOpeningMatches(participants) {
   const bracketSize = nextPowerOfTwo(participants.length);
-  const totalRounds = Math.log2(bracketSize);
-  const seededSlots = createSlots(participants, bracketSize);
-  const rounds = [];
-  const hasPreliminaryRound = participants.length !== bracketSize;
-  let currentRoundPlayers = seededSlots;
-  let currentRoundIndex = 0;
+  const slots = createSlots(participants, bracketSize);
+  const openingMatches = [];
+  let byeCount = 0;
+  let actualMatchCount = 0;
 
-  if (hasPreliminaryRound) {
-    const matchCount = currentRoundPlayers.length / 2;
-    const matches = [];
-    const nextRoundPlayers = [];
-    let actualMatchCount = 0;
+  for (let index = 0; index < slots.length; index += 2) {
+    const player1 = slots[index];
+    const player2 = slots[index + 1];
+    const isBye = Boolean((player1 && !player2) || (!player1 && player2));
+    const autoAdvancePlayer = player1 || player2 || null;
 
-    for (let matchIndex = 0; matchIndex < currentRoundPlayers.length; matchIndex += 2) {
-      const player1 = currentRoundPlayers[matchIndex];
-      const player2 = currentRoundPlayers[matchIndex + 1];
-
-      let autoWinner = null;
-      let note = "";
-      let hidden = false;
-
-      if (player1 && !player2) {
-        autoWinner = {
-          name: player1.name,
-          seed: player1.seed,
-          placeholder: false,
-          autoAdvanced: true,
-        };
-        note = `${player1.name} 자동 진출`;
-        hidden = true;
-      } else if (!player1 && player2) {
-        autoWinner = {
-          name: player2.name,
-          seed: player2.seed,
-          placeholder: false,
-          autoAdvanced: true,
-        };
-        note = `${player2.name} 자동 진출`;
-        hidden = true;
-      } else {
-        actualMatchCount += 1;
-      }
-
-      nextRoundPlayers.push(
-        autoWinner || {
-          name: `예선 ${Math.floor(matchIndex / 2) + 1}경기 승자`,
-          placeholder: true,
-        }
-      );
-
-      matches.push({
-        id: `${currentRoundIndex + 1}-${Math.floor(matchIndex / 2) + 1}`,
-        player1,
-        player2,
-        note,
-        isBye: Boolean(autoWinner),
-        winner: autoWinner,
-        hidden,
-      });
+    if (isBye) {
+      byeCount += 1;
+    } else {
+      actualMatchCount += 1;
     }
 
-    rounds.push({
-      label: "예선",
-      subtitle: `실경기 ${actualMatchCount}경기`,
-      matches,
+    openingMatches.push({
+      id: index / 2 + 1,
+      player1,
+      player2,
+      isBye,
+      note: isBye && autoAdvancePlayer ? `${autoAdvancePlayer.name} 부전승` : "",
     });
-
-    currentRoundPlayers = nextRoundPlayers;
-    currentRoundIndex += 1;
-  }
-
-  const remainingRounds = Math.log2(currentRoundPlayers.length);
-
-  for (let roundIndex = 0; roundIndex < remainingRounds; roundIndex += 1) {
-    const matchCount = currentRoundPlayers.length / 2;
-    const label = getRoundLabel(roundIndex, remainingRounds, matchCount);
-    const matches = [];
-    const nextRoundPlayers = [];
-
-    for (let matchIndex = 0; matchIndex < currentRoundPlayers.length; matchIndex += 2) {
-      const player1 = currentRoundPlayers[matchIndex];
-      const player2 = currentRoundPlayers[matchIndex + 1];
-
-      nextRoundPlayers.push({
-        name: `${label} ${Math.floor(matchIndex / 2) + 1}경기 승자`,
-        placeholder: true,
-      });
-
-      matches.push({
-        id: `${currentRoundIndex + 1}-${Math.floor(matchIndex / 2) + 1}`,
-        player1,
-        player2,
-        note: "",
-        isBye: false,
-        winner: null,
-        hidden: false,
-      });
-    }
-
-    rounds.push({
-      label,
-      subtitle: `${matchCount}경기`,
-      matches,
-    });
-
-    currentRoundPlayers = nextRoundPlayers;
-    currentRoundIndex += 1;
   }
 
   return {
-    rounds,
     bracketSize,
-    roundCount: rounds.length,
-    byeCount: bracketSize - participants.length,
-    hasPreliminaryRound,
-    preliminaryMatchCount: hasPreliminaryRound ? participants.length - previousPowerOfTwo(participants.length) : 0,
-    mainBracketSize: hasPreliminaryRound ? previousPowerOfTwo(participants.length) : participants.length,
+    byeCount,
+    actualMatchCount,
+    openingMatches,
   };
 }
 
@@ -253,7 +146,7 @@ function buildBracket({ eventName, grade, gender, rawParticipants, shuffle }) {
     seed: index + 1,
   }));
 
-  const created = createRounds(participants);
+  const opening = createOpeningMatches(participants);
 
   return {
     id: `${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
@@ -264,13 +157,10 @@ function buildBracket({ eventName, grade, gender, rawParticipants, shuffle }) {
     shuffle,
     participantCount: participants.length,
     participants,
-    bracketSize: created.bracketSize,
-    roundCount: created.roundCount,
-    byeCount: created.byeCount,
-    hasPreliminaryRound: created.hasPreliminaryRound,
-    preliminaryMatchCount: created.preliminaryMatchCount,
-    mainBracketSize: created.mainBracketSize,
-    rounds: created.rounds,
+    bracketSize: opening.bracketSize,
+    byeCount: opening.byeCount,
+    actualMatchCount: opening.actualMatchCount,
+    openingMatches: opening.openingMatches,
     createdAt: new Date().toISOString(),
   };
 }
@@ -316,359 +206,71 @@ function renderEmptyState() {
   bracketStage.innerHTML = `
     <div class="empty-state">
       <p class="empty-kicker">Ready</p>
-      <h3>아직 생성된 대진표가 없습니다.</h3>
-      <p>왼쪽에서 학년, 성별, 참가자 명단을 입력하면 좌우 대칭형 토너먼트 대진표가 자동으로 만들어집니다.</p>
+      <h3>아직 생성된 첫 경기 대진표가 없습니다.</h3>
+      <p>왼쪽에서 학년, 성별, 참가자 명단을 입력하면 참가자 수에 맞는 첫 경기 편성표와 부전승 배정이 자동으로 만들어집니다.</p>
     </div>
   `;
 }
 
-function createLine(x1, y1, x2, y2) {
-  return { x1, y1, x2, y2 };
-}
-
-function offsetLines(lines, offsetX, offsetY) {
-  return lines.map((line) => ({
-    x1: line.x1 + offsetX,
-    y1: line.y1 + offsetY,
-    x2: line.x2 + offsetX,
-    y2: line.y2 + offsetY,
-  }));
-}
-
-function splitRoundsForSides(rounds) {
-  const finalRound = rounds.at(-1);
-  const nonFinalRounds = rounds.slice(0, -1);
-
-  return {
-    finalRound,
-    leftRounds: nonFinalRounds.map((round) => ({
-      ...round,
-      matches: round.matches.slice(0, round.matches.length / 2),
-    })),
-    rightRounds: nonFinalRounds.map((round) => ({
-      ...round,
-      matches: round.matches.slice(round.matches.length / 2),
-    })),
-  };
-}
-
-function buildSideLayout(rounds, side) {
-  const cardWidth = 212;
-  const cardHeight = 92;
-  const columnGap = 78;
-  const rowGap = 28;
-
-  if (rounds.length === 0) {
-    return {
-      width: 0,
-      height: cardHeight,
-      columns: [],
-      lines: [],
-      championNode: null,
-      config: { cardWidth, cardHeight, columnGap, rowGap },
-    };
-  }
-
-  const columns = [];
-  const lines = [];
-  let previousCenters = [];
-
-  rounds.forEach((round, roundIndex) => {
-    const x =
-      side === "left"
-        ? roundIndex * (cardWidth + columnGap)
-        : (rounds.length - 1 - roundIndex) * (cardWidth + columnGap);
-
-    const nodes = round.matches.map((match, matchIndex) => {
-      const centerY =
-        roundIndex === 0
-          ? cardHeight / 2 + matchIndex * (cardHeight + rowGap)
-          : (previousCenters[matchIndex * 2] + previousCenters[matchIndex * 2 + 1]) / 2;
-
-      return {
-        match,
-        x,
-        y: centerY - cardHeight / 2,
-        centerY,
-      };
-    });
-
-    columns.push({
-      label: round.label,
-      subtitle: round.subtitle,
-      nodes,
-    });
-
-    previousCenters = nodes.map((node) => node.centerY);
-  });
-
-  for (let roundIndex = 0; roundIndex < columns.length - 1; roundIndex += 1) {
-    const currentNodes = columns[roundIndex].nodes;
-    const nextNodes = columns[roundIndex + 1].nodes;
-
-    nextNodes.forEach((parentNode, parentIndex) => {
-      const firstChild = currentNodes[parentIndex * 2];
-      const secondChild = currentNodes[parentIndex * 2 + 1];
-
-      if (side === "left") {
-        const mergeX = firstChild.x + cardWidth + columnGap / 2;
-
-        lines.push(createLine(firstChild.x + cardWidth, firstChild.centerY, mergeX, firstChild.centerY));
-        lines.push(createLine(secondChild.x + cardWidth, secondChild.centerY, mergeX, secondChild.centerY));
-        lines.push(createLine(mergeX, firstChild.centerY, mergeX, secondChild.centerY));
-        lines.push(createLine(mergeX, parentNode.centerY, parentNode.x, parentNode.centerY));
-      } else {
-        const mergeX = firstChild.x - columnGap / 2;
-
-        lines.push(createLine(firstChild.x, firstChild.centerY, mergeX, firstChild.centerY));
-        lines.push(createLine(secondChild.x, secondChild.centerY, mergeX, secondChild.centerY));
-        lines.push(createLine(mergeX, firstChild.centerY, mergeX, secondChild.centerY));
-        lines.push(createLine(mergeX, parentNode.centerY, parentNode.x + cardWidth, parentNode.centerY));
-      }
-    });
-  }
-
-  const lastNode = columns[0].nodes.at(-1);
-  const height = lastNode ? lastNode.y + cardHeight : cardHeight;
-  const width = (columns.length - 1) * (cardWidth + columnGap) + cardWidth;
-
-  return {
-    width,
-    height,
-    columns,
-    lines,
-    championNode: columns.at(-1)?.nodes[0] || null,
-    config: { cardWidth, cardHeight, columnGap, rowGap },
-  };
-}
-
-function createSymmetricBracketLayout(bracket) {
-  const { leftRounds, rightRounds, finalRound } = splitRoundsForSides(bracket.rounds);
-  const leftLayout = buildSideLayout(leftRounds, "left");
-  const rightLayout = buildSideLayout(rightRounds, "right");
-
-  const cardWidth = leftLayout.config.cardWidth;
-  const cardHeight = leftLayout.config.cardHeight;
-  const finalWidth = 244;
-  const finalHeight = 132;
-  const sideGap = 118;
-  const horizontalPadding = 26;
-  const topPadding = 82;
-  const bottomPadding = 34;
-  const contentHeight = Math.max(leftLayout.height, rightLayout.height, finalHeight);
-  const totalHeight = contentHeight + topPadding + bottomPadding;
-  const leftOffsetX = horizontalPadding;
-  const leftOffsetY = topPadding + (contentHeight - leftLayout.height) / 2;
-
-  const leftWidth = leftLayout.width;
-  const hasSideRounds = leftRounds.length > 0;
-  const finalX = hasSideRounds ? leftOffsetX + leftWidth + sideGap : horizontalPadding + 150;
-  const finalY = topPadding + contentHeight / 2 - finalHeight / 2;
-  const rightOffsetX = finalX + finalWidth + sideGap;
-  const rightOffsetY = topPadding + (contentHeight - rightLayout.height) / 2;
-  const totalWidth = Math.max(
-    finalX + finalWidth + horizontalPadding,
-    rightOffsetX + rightLayout.width + horizontalPadding
-  );
-
-  const nodes = [
-    ...leftLayout.columns.flatMap((column) =>
-      column.nodes.map((node) => ({
-        ...node,
-        side: "left",
-        x: node.x + leftOffsetX,
-        y: node.y + leftOffsetY,
-        centerY: node.centerY + leftOffsetY,
-      }))
-    ),
-    ...rightLayout.columns.flatMap((column) =>
-      column.nodes.map((node) => ({
-        ...node,
-        side: "right",
-        x: node.x + rightOffsetX,
-        y: node.y + rightOffsetY,
-        centerY: node.centerY + rightOffsetY,
-      }))
-    ),
-  ];
-
-  const lines = [
-    ...offsetLines(leftLayout.lines, leftOffsetX, leftOffsetY),
-    ...offsetLines(rightLayout.lines, rightOffsetX, rightOffsetY),
-  ];
-
-  const finalMatch = finalRound.matches[0];
-  const finalTopSlotY = finalY + 48;
-  const finalBottomSlotY = finalY + 92;
-
-  if (leftLayout.championNode) {
-    const leftChampionX = leftLayout.championNode.x + leftOffsetX + cardWidth;
-    const leftChampionY = leftLayout.championNode.centerY + leftOffsetY;
-    const mergeX = finalX - 34;
-
-    lines.push(createLine(leftChampionX, leftChampionY, mergeX, leftChampionY));
-    lines.push(createLine(mergeX, leftChampionY, mergeX, finalTopSlotY));
-    lines.push(createLine(mergeX, finalTopSlotY, finalX, finalTopSlotY));
-  }
-
-  if (rightLayout.championNode) {
-    const rightChampionX = rightLayout.championNode.x + rightOffsetX;
-    const rightChampionY = rightLayout.championNode.centerY + rightOffsetY;
-    const mergeX = finalX + finalWidth + 34;
-
-    lines.push(createLine(rightChampionX, rightChampionY, mergeX, rightChampionY));
-    lines.push(createLine(mergeX, rightChampionY, mergeX, finalBottomSlotY));
-    lines.push(createLine(mergeX, finalBottomSlotY, finalX + finalWidth, finalBottomSlotY));
-  }
-
-  const labels = [
-    ...leftLayout.columns.map((column, index) => ({
-      text: column.label,
-      subtitle: column.subtitle,
-      x: leftOffsetX + index * (cardWidth + leftLayout.config.columnGap) + cardWidth / 2,
-      align: "center",
-    })),
-    ...rightLayout.columns.map((column, index) => ({
-      text: column.label,
-      subtitle: column.subtitle,
-      x:
-        rightOffsetX +
-        (rightLayout.columns.length - 1 - index) * (cardWidth + rightLayout.config.columnGap) +
-        cardWidth / 2,
-      align: "center",
-    })),
-    {
-      text: "챔피언십",
-      subtitle: finalRound.label,
-      x: finalX + finalWidth / 2,
-      align: "center",
-    },
-  ];
-
-  return {
-    width: totalWidth,
-    height: totalHeight,
-    nodes,
-    lines,
-    labels,
-    finalCard: {
-      match: finalMatch,
-      x: finalX,
-      y: finalY,
-      width: finalWidth,
-      height: finalHeight,
-    },
-  };
-}
-
-function renderLines(lines) {
-  return lines
-    .map(
-      (line) =>
-        `<line x1="${line.x1}" y1="${line.y1}" x2="${line.x2}" y2="${line.y2}" stroke="rgba(240, 230, 208, 0.88)" stroke-width="3.4" stroke-linecap="round" />`
-    )
-    .join("");
-}
-
-function renderBoardSlot(player, winner) {
+function renderPlayerCell(player) {
   if (!player) {
     return `
-      <div class="node-slot placeholder">
-        <span class="slot-name">BYE</span>
-        <span class="slot-meta">부전승</span>
+      <div class="opening-player-cell placeholder">
+        <span class="opening-player-name">BYE</span>
+        <span class="opening-player-meta">부전승 자리</span>
       </div>
     `;
   }
 
-  const isPlaceholder = Boolean(player.placeholder);
-  const isWinner = Boolean(winner && !player.placeholder && winner.name === player.name);
-
   return `
-    <div class="node-slot ${isPlaceholder ? "placeholder" : ""} ${isWinner ? "winner" : ""}">
-      <span class="slot-name">${escapeHtml(player.name)}</span>
-      <span class="slot-meta">${isPlaceholder ? "승자 대기" : `Seed ${escapeHtml(player.seed ?? "-")}`}</span>
+    <div class="opening-player-cell">
+      <span class="opening-player-name">${escapeHtml(player.name)}</span>
+      <span class="opening-player-meta">Seed ${escapeHtml(player.seed)}</span>
     </div>
   `;
 }
 
-function renderMatchNode(node) {
-  if (node.match.hidden) {
-    return "";
-  }
-
-  const badge = node.match.note
-    ? `<div class="node-badge">${escapeHtml(node.match.note)}</div>`
-    : `<div class="node-badge subtle">${escapeHtml(node.match.id)}경기</div>`;
-
+function renderOpeningMatchCard(match) {
   return `
-    <article class="match-node ${node.side} ${node.match.isBye ? "is-bye" : ""}" style="left:${node.x}px; top:${node.y}px;">
-      ${badge}
-      ${renderBoardSlot(node.match.player1, node.match.winner)}
-      ${renderBoardSlot(node.match.player2, node.match.winner)}
-    </article>
-  `;
-}
-
-function renderFinalCard(finalCard) {
-  return `
-    <article class="final-match-card" style="left:${finalCard.x}px; top:${finalCard.y}px; width:${finalCard.width}px; height:${finalCard.height}px;">
-      <div class="final-head">
-        <span class="final-head-label">Final Match</span>
-        <strong>우승 결정전</strong>
+    <article class="opening-match-card ${match.isBye ? "is-bye" : ""}">
+      <div class="opening-match-head">
+        <span class="opening-match-index">Match ${match.id}</span>
+        <span class="opening-match-badge ${match.isBye ? "bye" : "play"}">
+          ${match.isBye ? "부전승" : "첫 경기"}
+        </span>
       </div>
-      ${renderBoardSlot(finalCard.match.player1, finalCard.match.winner)}
-      ${renderBoardSlot(finalCard.match.player2, finalCard.match.winner)}
+      <div class="opening-player-stack">
+        ${renderPlayerCell(match.player1)}
+        ${renderPlayerCell(match.player2)}
+      </div>
+      <p class="opening-match-note">
+        ${match.isBye ? escapeHtml(match.note) : `${match.id}번 첫 경기`}
+      </p>
     </article>
   `;
 }
 
-function renderRoundPills(labels) {
-  return labels
-    .map(
-      (label) => `
-        <div class="round-pill" style="left:${label.x}px;">
-          <strong>${escapeHtml(label.text)}</strong>
-          <span>${escapeHtml(label.subtitle)}</span>
-        </div>
-      `
-    )
+function renderOpeningBoard(bracket) {
+  const boardMarkup = bracket.openingMatches
+    .map((match) => renderOpeningMatchCard(match))
     .join("");
-}
-
-function renderBracketBoard(bracket) {
-  const layout = createSymmetricBracketLayout(bracket);
-  const nodesMarkup = layout.nodes.map((node) => renderMatchNode(node)).join("");
-  const linesMarkup = renderLines(layout.lines);
-  const labelsMarkup = renderRoundPills(layout.labels);
-  const finalMarkup = renderFinalCard(layout.finalCard);
 
   return `
-    <section class="bracket-visual-shell">
+    <section class="opening-board-shell">
       <div class="bracket-visual-head">
         <div>
-          <p class="panel-kicker">Visual Bracket</p>
-          <h4>좌우 대칭 토너먼트 보드</h4>
+          <p class="panel-kicker">Opening Matches</p>
+          <h4>첫 경기 편성표</h4>
         </div>
         <p>${escapeHtml(
-          bracket.hasPreliminaryRound
-            ? `${bracket.participantCount}명 기준 예선 후 ${bracket.mainBracketSize}강 본선으로 편성됩니다.`
-            : `${bracket.participantCount}명 기준 ${bracket.mainBracketSize}강부터 바로 시작합니다.`
+          bracket.byeCount > 0
+            ? `${bracket.participantCount}명 기준으로 첫 경기 ${bracket.actualMatchCount}경기와 부전승 ${bracket.byeCount}개가 자동 배정됩니다.`
+            : `${bracket.participantCount}명 모두 첫 경기 편성으로 바로 배정됩니다.`
         )}</p>
       </div>
 
-      <div class="bracket-board-viewport">
-        <div class="symmetric-bracket" style="width:${layout.width}px; height:${layout.height}px;">
-          ${labelsMarkup}
-          <div class="champion-mark" style="left:${layout.finalCard.x + layout.finalCard.width / 2}px; top:${layout.finalCard.y - 72}px;">
-            <span>🏆</span>
-            <strong>Champion</strong>
-          </div>
-          <svg class="connector-layer" viewBox="0 0 ${layout.width} ${layout.height}" preserveAspectRatio="none" aria-hidden="true">
-            ${linesMarkup}
-          </svg>
-          ${nodesMarkup}
-          ${finalMarkup}
-        </div>
+      <div class="opening-match-grid">
+        ${boardMarkup}
       </div>
     </section>
   `;
@@ -685,13 +287,8 @@ function renderBracket() {
   const metaCards = [
     { label: "대회명", value: bracket.eventTitle },
     { label: "참가자", value: `${bracket.participantCount}명` },
-    {
-      label: "시작 라운드",
-      value: bracket.hasPreliminaryRound
-        ? `예선 후 ${bracket.mainBracketSize}강`
-        : `${bracket.mainBracketSize}강`,
-    },
-    { label: "부전승", value: `${bracket.byeCount}명` },
+    { label: "첫 경기", value: `${bracket.actualMatchCount}경기` },
+    { label: "부전승", value: `${bracket.byeCount}개` },
   ];
 
   const participantTags = bracket.participants
@@ -734,7 +331,7 @@ function renderBracket() {
             .join("")}
         </section>
 
-        ${renderBracketBoard(bracket)}
+        ${renderOpeningBoard(bracket)}
       </section>
 
       <section class="participant-list">
@@ -759,25 +356,23 @@ function slugifyFileName(value) {
 }
 
 function buildExportFileName(bracket) {
-  const baseName = [bracket.eventTitle, bracket.divisionName, "bracket"]
+  const baseName = [bracket.eventTitle, bracket.divisionName, "opening-matches"]
     .map((item) => slugifyFileName(item))
     .filter(Boolean)
     .join("-");
 
-  return `${baseName || "tournament-bracket"}.jpg`;
+  return `${baseName || "tournament-opening-matches"}.jpg`;
 }
 
 function createExportSurface(bracket) {
-  const source = bracketStage.querySelector(`.${JPG_EXPORT_CLASS}`);
-  const board = bracketStage.querySelector(".symmetric-bracket");
-
-  if (!source || !board) return null;
+  const board = bracketStage.querySelector(".opening-board-shell");
+  if (!board) return null;
 
   const metaMarkup = [
     { label: "대회명", value: bracket.eventTitle },
     { label: "부문", value: bracket.divisionName },
     { label: "참가자", value: `${bracket.participantCount}명` },
-    { label: "대진 규모", value: `${bracket.bracketSize}강` },
+    { label: "부전승", value: `${bracket.byeCount}개` },
   ]
     .map(
       (item) => `
@@ -795,15 +390,13 @@ function createExportSurface(bracket) {
     <div class="jpg-export-header">
       <p>BLACK BRACKET STUDIO</p>
       <h2>${escapeHtml(bracket.divisionName)}</h2>
-      <strong>${escapeHtml(bracket.eventTitle)}</strong>
+      <strong>${escapeHtml(bracket.eventTitle)} 첫 경기 편성표</strong>
     </div>
     <div class="jpg-export-meta">${metaMarkup}</div>
     <div class="jpg-export-board-wrap"></div>
   `;
 
-  const boardClone = board.cloneNode(true);
-  exportSurface.querySelector(".jpg-export-board-wrap").append(boardClone);
-
+  exportSurface.querySelector(".jpg-export-board-wrap").append(board.cloneNode(true));
   return exportSurface;
 }
 
@@ -864,15 +457,14 @@ function updateSummary() {
   const participantNames = getParticipantNames(participantsInput.value);
   const previewName = `${gradeInput.value} ${genderInput.value}부`;
   const bracketSize = participantNames.length >= 2 ? nextPowerOfTwo(participantNames.length) : 0;
-  const roundCount = participantNames.length >= 2 ? Math.log2(nextPowerOfTwo(participantNames.length)) : 0;
+  const openingMatchCount = bracketSize ? bracketSize / 2 : 0;
   const byeCount = bracketSize ? bracketSize - participantNames.length : 0;
-  const startLabel = participantNames.length >= 2 ? getMainBracketLabel(participantNames.length) : "0강";
 
   divisionPreview.textContent = previewName;
   summaryCount.textContent = `${participantNames.length}명`;
-  summaryRounds.textContent = `${roundCount}라운드`;
-  summaryBracket.textContent = startLabel;
-  summaryByes.textContent = `${byeCount}명`;
+  summaryRounds.textContent = `${openingMatchCount}경기`;
+  summaryBracket.textContent = bracketSize ? `${bracketSize}명 편성` : "0명 편성";
+  summaryByes.textContent = `${byeCount}개`;
 }
 
 function renderAll() {
