@@ -95,6 +95,21 @@ function getRoundLabel(roundIndex, totalRounds, matchCount) {
   return `${matchCount * 2}강`;
 }
 
+function previousPowerOfTwo(value) {
+  let size = 1;
+  while (size * 2 <= value) size *= 2;
+  return size;
+}
+
+function getMainBracketLabel(participantCount) {
+  if (participantCount <= 1) return "대기";
+
+  const isPowerOfTwo = participantCount === nextPowerOfTwo(participantCount);
+  if (isPowerOfTwo) return `${participantCount}강`;
+
+  return `${previousPowerOfTwo(participantCount)}강 본선`;
+}
+
 function createSlots(participants, bracketSize) {
   const seedOrder = getSeedOrder(bracketSize);
   const slots = new Array(bracketSize).fill(null);
@@ -111,13 +126,15 @@ function createRounds(participants) {
   const totalRounds = Math.log2(bracketSize);
   const seededSlots = createSlots(participants, bracketSize);
   const rounds = [];
+  const hasPreliminaryRound = participants.length !== bracketSize;
   let currentRoundPlayers = seededSlots;
+  let currentRoundIndex = 0;
 
-  for (let roundIndex = 0; roundIndex < totalRounds; roundIndex += 1) {
+  if (hasPreliminaryRound) {
     const matchCount = currentRoundPlayers.length / 2;
-    const label = getRoundLabel(roundIndex, totalRounds, matchCount);
     const matches = [];
     const nextRoundPlayers = [];
+    let actualMatchCount = 0;
 
     for (let matchIndex = 0; matchIndex < currentRoundPlayers.length; matchIndex += 2) {
       const player1 = currentRoundPlayers[matchIndex];
@@ -125,6 +142,7 @@ function createRounds(participants) {
 
       let autoWinner = null;
       let note = "";
+      let hidden = false;
 
       if (player1 && !player2) {
         autoWinner = {
@@ -134,6 +152,7 @@ function createRounds(participants) {
           autoAdvanced: true,
         };
         note = `${player1.name} 자동 진출`;
+        hidden = true;
       } else if (!player1 && player2) {
         autoWinner = {
           name: player2.name,
@@ -142,22 +161,64 @@ function createRounds(participants) {
           autoAdvanced: true,
         };
         note = `${player2.name} 자동 진출`;
+        hidden = true;
+      } else {
+        actualMatchCount += 1;
       }
 
       nextRoundPlayers.push(
         autoWinner || {
-          name: `${label} ${Math.floor(matchIndex / 2) + 1}경기 승자`,
+          name: `예선 ${Math.floor(matchIndex / 2) + 1}경기 승자`,
           placeholder: true,
         }
       );
 
       matches.push({
-        id: `${roundIndex + 1}-${Math.floor(matchIndex / 2) + 1}`,
+        id: `${currentRoundIndex + 1}-${Math.floor(matchIndex / 2) + 1}`,
         player1,
         player2,
         note,
         isBye: Boolean(autoWinner),
         winner: autoWinner,
+        hidden,
+      });
+    }
+
+    rounds.push({
+      label: "예선",
+      subtitle: `실경기 ${actualMatchCount}경기`,
+      matches,
+    });
+
+    currentRoundPlayers = nextRoundPlayers;
+    currentRoundIndex += 1;
+  }
+
+  const remainingRounds = Math.log2(currentRoundPlayers.length);
+
+  for (let roundIndex = 0; roundIndex < remainingRounds; roundIndex += 1) {
+    const matchCount = currentRoundPlayers.length / 2;
+    const label = getRoundLabel(roundIndex, remainingRounds, matchCount);
+    const matches = [];
+    const nextRoundPlayers = [];
+
+    for (let matchIndex = 0; matchIndex < currentRoundPlayers.length; matchIndex += 2) {
+      const player1 = currentRoundPlayers[matchIndex];
+      const player2 = currentRoundPlayers[matchIndex + 1];
+
+      nextRoundPlayers.push({
+        name: `${label} ${Math.floor(matchIndex / 2) + 1}경기 승자`,
+        placeholder: true,
+      });
+
+      matches.push({
+        id: `${currentRoundIndex + 1}-${Math.floor(matchIndex / 2) + 1}`,
+        player1,
+        player2,
+        note: "",
+        isBye: false,
+        winner: null,
+        hidden: false,
       });
     }
 
@@ -168,13 +229,17 @@ function createRounds(participants) {
     });
 
     currentRoundPlayers = nextRoundPlayers;
+    currentRoundIndex += 1;
   }
 
   return {
     rounds,
     bracketSize,
-    roundCount: totalRounds,
+    roundCount: rounds.length,
     byeCount: bracketSize - participants.length,
+    hasPreliminaryRound,
+    preliminaryMatchCount: hasPreliminaryRound ? participants.length - previousPowerOfTwo(participants.length) : 0,
+    mainBracketSize: hasPreliminaryRound ? previousPowerOfTwo(participants.length) : participants.length,
   };
 }
 
@@ -202,6 +267,9 @@ function buildBracket({ eventName, grade, gender, rawParticipants, shuffle }) {
     bracketSize: created.bracketSize,
     roundCount: created.roundCount,
     byeCount: created.byeCount,
+    hasPreliminaryRound: created.hasPreliminaryRound,
+    preliminaryMatchCount: created.preliminaryMatchCount,
+    mainBracketSize: created.mainBracketSize,
     rounds: created.rounds,
     createdAt: new Date().toISOString(),
   };
@@ -524,6 +592,10 @@ function renderBoardSlot(player, winner) {
 }
 
 function renderMatchNode(node) {
+  if (node.match.hidden) {
+    return "";
+  }
+
   const badge = node.match.note
     ? `<div class="node-badge">${escapeHtml(node.match.note)}</div>`
     : `<div class="node-badge subtle">${escapeHtml(node.match.id)}경기</div>`;
@@ -577,7 +649,11 @@ function renderBracketBoard(bracket) {
           <p class="panel-kicker">Visual Bracket</p>
           <h4>좌우 대칭 토너먼트 보드</h4>
         </div>
-        <p>예시 이미지처럼 좌우에서 중앙 결승으로 모이는 구조입니다.</p>
+        <p>${escapeHtml(
+          bracket.hasPreliminaryRound
+            ? `${bracket.participantCount}명 기준 예선 후 ${bracket.mainBracketSize}강 본선으로 편성됩니다.`
+            : `${bracket.participantCount}명 기준 ${bracket.mainBracketSize}강부터 바로 시작합니다.`
+        )}</p>
       </div>
 
       <div class="bracket-board-viewport">
@@ -609,7 +685,12 @@ function renderBracket() {
   const metaCards = [
     { label: "대회명", value: bracket.eventTitle },
     { label: "참가자", value: `${bracket.participantCount}명` },
-    { label: "대진 규모", value: `${bracket.bracketSize}강` },
+    {
+      label: "시작 라운드",
+      value: bracket.hasPreliminaryRound
+        ? `예선 후 ${bracket.mainBracketSize}강`
+        : `${bracket.mainBracketSize}강`,
+    },
     { label: "부전승", value: `${bracket.byeCount}명` },
   ];
 
@@ -783,13 +864,14 @@ function updateSummary() {
   const participantNames = getParticipantNames(participantsInput.value);
   const previewName = `${gradeInput.value} ${genderInput.value}부`;
   const bracketSize = participantNames.length >= 2 ? nextPowerOfTwo(participantNames.length) : 0;
-  const roundCount = bracketSize ? Math.log2(bracketSize) : 0;
+  const roundCount = participantNames.length >= 2 ? Math.log2(nextPowerOfTwo(participantNames.length)) : 0;
   const byeCount = bracketSize ? bracketSize - participantNames.length : 0;
+  const startLabel = participantNames.length >= 2 ? getMainBracketLabel(participantNames.length) : "0강";
 
   divisionPreview.textContent = previewName;
   summaryCount.textContent = `${participantNames.length}명`;
   summaryRounds.textContent = `${roundCount}라운드`;
-  summaryBracket.textContent = bracketSize ? `${bracketSize}강` : "0강";
+  summaryBracket.textContent = startLabel;
   summaryByes.textContent = `${byeCount}명`;
 }
 
