@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Black Bracket Studio</title>
+    <meta
+      name="description"
+      content="학년, 성별, 참가자 명단을 입력하면 자동으로 토너먼트 대진표를 생성하는 경기용 브래킷 메이커"
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Noto+Sans+KR:wght@400;500;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="noise"></div>
+    <div class="glow glow-left"></div>
+    <div class="glow glow-right"></div>
+
+    <main class="app-shell">
+      <section class="hero-panel">
+        <div class="hero-copy">
+          <p class="eyebrow">Tournament Control Room</p>
+          <h1>Black Bracket Studio</h1>
+          <p class="lead">
+            초1부터 초6까지, 남녀 구분 대회를 빠르게 편성할 수 있는 경기용 대진표
+            생성기입니다. 학년, 성별, 참가자 명단만 입력하면 자동으로 라운드와
+            부전승이 정리된 토너먼트형 브래킷을 만들어 줍니다.
+          </p>
+        </div>
+
+        <div class="hero-metrics">
+          <article class="metric-card">
+            <span>지원 부문</span>
+            <strong>초1 ~ 초6 / 남녀</strong>
+          </article>
+          <article class="metric-card">
+            <span>대진 방식</span>
+            <strong>자동 시드 + 부전승</strong>
+          </article>
+          <article class="metric-card">
+            <span>저장 방식</span>
+            <strong>브라우저 로컬 저장</strong>
+          </article>
+        </div>
+      </section>
+
+      <section class="workspace-grid">
+        <aside class="control-panel panel">
+          <div class="panel-head">
+            <p class="panel-kicker">Bracket Builder</p>
+            <h2>대진표 생성</h2>
+          </div>
+
+          <form id="tournament-form" class="builder-form">
+            <label class="field">
+              <span>대회명</span>
+              <input
+                id="event-name"
+                name="eventName"
+                type="text"
+                placeholder="예: 2026 교내 스포츠 리그"
+                maxlength="40"
+              />
+            </label>
+
+            <div class="field-grid">
+              <label class="field">
+                <span>학년</span>
+                <select id="grade" name="grade">
+                  <option value="초1">초1</option>
+                  <option value="초2">초2</option>
+                  <option value="초3">초3</option>
+                  <option value="초4" selected>초4</option>
+                  <option value="초5">초5</option>
+                  <option value="초6">초6</option>
+                </select>
+              </label>
+
+              <label class="field">
+                <span>성별</span>
+                <select id="gender" name="gender">
+                  <option value="남자" selected>남자</option>
+                  <option value="여자">여자</option>
+                </select>
+              </label>
+            </div>
+
+            <label class="field">
+              <span>참가자 명단</span>
+              <textarea
+                id="participants"
+                name="participants"
+                rows="12"
+                placeholder="한 줄에 한 명씩 입력하세요.&#10;예:&#10;김민준&#10;이서준&#10;박지호"
+              ></textarea>
+            </label>
+
+            <label class="toggle">
+              <input id="shuffle" name="shuffle" type="checkbox" />
+              <span>참가자 순서를 무작위로 섞어서 대진표 만들기</span>
+            </label>
+
+            <div class="action-row">
+              <button type="submit" class="primary-button">대진표 생성</button>
+              <button type="button" class="ghost-button" id="sample-button">
+                샘플 입력
+              </button>
+              <button type="reset" class="text-button">입력 비우기</button>
+            </div>
+          </form>
+
+          <section class="summary-panel">
+            <div class="summary-head">
+              <h3>실시간 요약</h3>
+              <p id="division-preview">초4 남자부</p>
+            </div>
+            <div class="summary-grid">
+              <article class="summary-card">
+                <span>참가자</span>
+                <strong id="summary-count">0명</strong>
+              </article>
+              <article class="summary-card">
+                <span>예상 라운드</span>
+                <strong id="summary-rounds">0라운드</strong>
+              </article>
+              <article class="summary-card">
+                <span>대진 규모</span>
+                <strong id="summary-bracket">0강</strong>
+              </article>
+              <article class="summary-card">
+                <span>부전승</span>
+                <strong id="summary-byes">0명</strong>
+              </article>
+            </div>
+          </section>
+        </aside>
+
+        <section class="preview-panel panel">
+          <div class="preview-top">
+            <div>
+              <p class="panel-kicker">Saved Divisions</p>
+              <h2>생성된 대진표</h2>
+            </div>
+            <div class="utility-actions">
+              <button type="button" class="ghost-button" id="print-button">
+                인쇄
+              </button>
+              <button type="button" class="text-button" id="clear-button">
+                전체 삭제
+              </button>
+            </div>
+          </div>
+
+          <div id="division-list" class="division-list"></div>
+
+          <div id="bracket-stage" class="bracket-stage">
+            <div class="empty-state">
+              <p class="empty-kicker">Ready</p>
+              <h3>아직 생성된 대진표가 없습니다.</h3>
+              <p>
+                왼쪽에서 학년, 성별, 참가자 명단을 입력하면 자동으로 토너먼트
+                브래킷이 만들어집니다.
+              </p>
+            </div>
+          </div>
+        </section>
+      </section>
+    </main>
+
+    <script src="./script.js"></script>
+  </body>
+</html>
