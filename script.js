@@ -16,6 +16,7 @@ const summaryCount = document.querySelector("#summary-count");
 const summaryRounds = document.querySelector("#summary-rounds");
 const summaryBracket = document.querySelector("#summary-bracket");
 const summaryByes = document.querySelector("#summary-byes");
+const JPG_EXPORT_CLASS = "jpg-export-surface";
 
 const state = {
   brackets: loadStoredBrackets(),
@@ -625,32 +626,35 @@ function renderBracket() {
 
   bracketStage.innerHTML = `
     <article class="bracket-shell">
-      <header class="bracket-header">
-        <div class="bracket-title-group">
-          <p>${escapeHtml(formatDate(bracket.createdAt))} 생성</p>
-          <h3>${escapeHtml(bracket.divisionName)}</h3>
-          <p>${escapeHtml(bracket.eventTitle)}</p>
-        </div>
-        <div class="bracket-actions">
-          <button type="button" class="bracket-action-button" data-duplicate-id="${bracket.id}">복제</button>
-          <button type="button" class="bracket-action-button" data-delete-id="${bracket.id}">삭제</button>
-        </div>
-      </header>
+      <section class="${JPG_EXPORT_CLASS}">
+        <header class="bracket-header">
+          <div class="bracket-title-group">
+            <p>${escapeHtml(formatDate(bracket.createdAt))} 생성</p>
+            <h3>${escapeHtml(bracket.divisionName)}</h3>
+            <p>${escapeHtml(bracket.eventTitle)}</p>
+          </div>
+          <div class="bracket-actions">
+            <button type="button" class="bracket-action-button" data-download-jpg="${bracket.id}">JPG 저장</button>
+            <button type="button" class="bracket-action-button" data-duplicate-id="${bracket.id}">복제</button>
+            <button type="button" class="bracket-action-button" data-delete-id="${bracket.id}">삭제</button>
+          </div>
+        </header>
 
-      <section class="bracket-meta">
-        ${metaCards
-          .map(
-            (card) => `
-              <article class="bracket-meta-card">
-                <span>${escapeHtml(card.label)}</span>
-                <strong>${escapeHtml(card.value)}</strong>
-              </article>
-            `
-          )
-          .join("")}
+        <section class="bracket-meta">
+          ${metaCards
+            .map(
+              (card) => `
+                <article class="bracket-meta-card">
+                  <span>${escapeHtml(card.label)}</span>
+                  <strong>${escapeHtml(card.value)}</strong>
+                </article>
+              `
+            )
+            .join("")}
+        </section>
+
+        ${renderBracketBoard(bracket)}
       </section>
-
-      ${renderBracketBoard(bracket)}
 
       <section class="participant-list">
         <div class="participant-list-header">
@@ -661,6 +665,118 @@ function renderBracket() {
       </section>
     </article>
   `;
+}
+
+function slugifyFileName(value) {
+  return value
+    .normalize("NFKD")
+    .replace(/[^\w\s-]/g, "")
+    .trim()
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-")
+    .toLowerCase();
+}
+
+function buildExportFileName(bracket) {
+  const baseName = [bracket.eventTitle, bracket.divisionName, "bracket"]
+    .map((item) => slugifyFileName(item))
+    .filter(Boolean)
+    .join("-");
+
+  return `${baseName || "tournament-bracket"}.jpg`;
+}
+
+function createExportSurface(bracket) {
+  const source = bracketStage.querySelector(`.${JPG_EXPORT_CLASS}`);
+  const board = bracketStage.querySelector(".symmetric-bracket");
+
+  if (!source || !board) return null;
+
+  const metaMarkup = [
+    { label: "대회명", value: bracket.eventTitle },
+    { label: "부문", value: bracket.divisionName },
+    { label: "참가자", value: `${bracket.participantCount}명` },
+    { label: "대진 규모", value: `${bracket.bracketSize}강` },
+  ]
+    .map(
+      (item) => `
+        <article class="jpg-export-meta-card">
+          <span>${escapeHtml(item.label)}</span>
+          <strong>${escapeHtml(item.value)}</strong>
+        </article>
+      `
+    )
+    .join("");
+
+  const exportSurface = document.createElement("section");
+  exportSurface.className = "jpg-export-sheet";
+  exportSurface.innerHTML = `
+    <div class="jpg-export-header">
+      <p>BLACK BRACKET STUDIO</p>
+      <h2>${escapeHtml(bracket.divisionName)}</h2>
+      <strong>${escapeHtml(bracket.eventTitle)}</strong>
+    </div>
+    <div class="jpg-export-meta">${metaMarkup}</div>
+    <div class="jpg-export-board-wrap"></div>
+  `;
+
+  const boardClone = board.cloneNode(true);
+  exportSurface.querySelector(".jpg-export-board-wrap").append(boardClone);
+
+  return exportSurface;
+}
+
+async function downloadBracketAsJpg(bracketId, triggerButton) {
+  const bracket = state.brackets.find((item) => item.id === bracketId);
+  if (!bracket) return;
+
+  if (typeof window.html2canvas !== "function") {
+    alert("이미지 저장 기능을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.");
+    return;
+  }
+
+  const exportSurface = createExportSurface(bracket);
+  if (!exportSurface) {
+    alert("내보낼 대진표를 찾지 못했습니다.");
+    return;
+  }
+
+  const originalLabel = triggerButton?.textContent ?? "";
+
+  if (triggerButton) {
+    triggerButton.disabled = true;
+    triggerButton.textContent = "JPG 생성 중...";
+  }
+
+  exportSurface.style.position = "fixed";
+  exportSurface.style.left = "-100000px";
+  exportSurface.style.top = "0";
+  exportSurface.style.zIndex = "-1";
+  document.body.append(exportSurface);
+
+  try {
+    const canvas = await window.html2canvas(exportSurface, {
+      backgroundColor: "#05070b",
+      scale: 2,
+      useCORS: true,
+      logging: false,
+    });
+
+    const link = document.createElement("a");
+    link.href = canvas.toDataURL("image/jpeg", 0.95);
+    link.download = buildExportFileName(bracket);
+    link.click();
+  } catch (error) {
+    console.error("JPG 저장 중 오류가 발생했습니다.", error);
+    alert("JPG 저장 중 오류가 발생했습니다. 다시 시도해 주세요.");
+  } finally {
+    exportSurface.remove();
+
+    if (triggerButton) {
+      triggerButton.disabled = false;
+      triggerButton.textContent = originalLabel;
+    }
+  }
 }
 
 function updateSummary() {
@@ -808,6 +924,12 @@ divisionList.addEventListener("click", (event) => {
 });
 
 bracketStage.addEventListener("click", (event) => {
+  const jpgTarget = event.target.closest("[data-download-jpg]");
+  if (jpgTarget) {
+    downloadBracketAsJpg(jpgTarget.dataset.downloadJpg, jpgTarget);
+    return;
+  }
+
   const deleteTarget = event.target.closest("[data-delete-id]");
   if (deleteTarget) {
     deleteBracket(deleteTarget.dataset.deleteId);

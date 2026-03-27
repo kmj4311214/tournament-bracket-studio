@@ -476,6 +476,10 @@ textarea:focus {
   padding: 24px;
 }
 
+.jpg-export-surface {
+  display: block;
+}
+
 .bracket-header {
   display: flex;
   justify-content: space-between;
@@ -764,6 +768,85 @@ textarea:focus {
   display: block;
   margin-top: 6px;
   font-size: 1.12rem;
+}
+
+.bracket-action-button:disabled {
+  opacity: 0.7;
+  cursor: wait;
+  transform: none;
+}
+
+.jpg-export-sheet {
+  width: max-content;
+  min-width: 1400px;
+  padding: 34px;
+  border-radius: 34px;
+  color: #f5f0e6;
+  background:
+    radial-gradient(circle at center, rgba(72, 120, 162, 0.18), transparent 35%),
+    radial-gradient(circle at top, rgba(207, 176, 110, 0.11), transparent 28%),
+    linear-gradient(180deg, #06080c 0%, #08101a 48%, #05070b 100%);
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.45);
+}
+
+.jpg-export-header {
+  text-align: center;
+}
+
+.jpg-export-header p {
+  margin: 0;
+  color: var(--gold);
+  font-size: 0.82rem;
+  font-weight: 800;
+  letter-spacing: 0.22em;
+}
+
+.jpg-export-header h2 {
+  margin-top: 10px;
+  font-size: 3rem;
+}
+
+.jpg-export-header strong {
+  display: block;
+  margin-top: 8px;
+  font-size: 1.05rem;
+  color: #ddd3c3;
+}
+
+.jpg-export-meta {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 24px;
+}
+
+.jpg-export-meta-card {
+  padding: 16px 18px;
+  border-radius: 18px;
+  border: 1px solid rgba(243, 215, 154, 0.12);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.jpg-export-meta-card span {
+  color: #b4aa9a;
+  font-size: 0.88rem;
+}
+
+.jpg-export-meta-card strong {
+  display: block;
+  margin-top: 8px;
+  font-size: 1.08rem;
+}
+
+.jpg-export-board-wrap {
+  margin-top: 24px;
+  padding: 20px;
+  border-radius: 26px;
+  border: 1px solid rgba(243, 215, 154, 0.1);
+  background:
+    radial-gradient(circle at center, rgba(88, 134, 176, 0.13), transparent 38%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.025), rgba(255, 255, 255, 0.01)),
+    rgba(6, 12, 18, 0.88);
 }
 
 .bracket-board {
