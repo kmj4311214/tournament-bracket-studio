@@ -100,39 +100,68 @@ function createSlots(participants, bracketSize) {
   return slots;
 }
 
-function createOpeningMatches(participants) {
+function getRoundLabel(roundIndex, totalRounds, matchCount) {
+  if (roundIndex === totalRounds - 1) return "결승";
+  if (roundIndex === totalRounds - 2) return "준결승";
+  return `${matchCount * 2}강`;
+}
+
+function createTournamentRounds(participants) {
   const bracketSize = nextPowerOfTwo(participants.length);
+  const totalRounds = Math.log2(bracketSize);
   const slots = createSlots(participants, bracketSize);
-  const openingMatches = [];
+  const rounds = [];
+  let currentPlayers = slots;
   let byeCount = 0;
-  let actualMatchCount = 0;
 
-  for (let index = 0; index < slots.length; index += 2) {
-    const player1 = slots[index];
-    const player2 = slots[index + 1];
-    const isBye = Boolean((player1 && !player2) || (!player1 && player2));
-    const autoAdvancePlayer = player1 || player2 || null;
+  for (let roundIndex = 0; roundIndex < totalRounds; roundIndex += 1) {
+    const matchCount = currentPlayers.length / 2;
+    const label = getRoundLabel(roundIndex, totalRounds, matchCount);
+    const matches = [];
+    const nextPlayers = [];
 
-    if (isBye) {
-      byeCount += 1;
-    } else {
-      actualMatchCount += 1;
+    for (let matchIndex = 0; matchIndex < currentPlayers.length; matchIndex += 2) {
+      const player1 = currentPlayers[matchIndex];
+      const player2 = currentPlayers[matchIndex + 1];
+      const isBye = Boolean((player1 && !player2) || (!player1 && player2));
+      const autoWinner = isBye ? player1 || player2 : null;
+
+      if (roundIndex === 0 && isBye) {
+        byeCount += 1;
+      }
+
+      nextPlayers.push(
+        autoWinner || {
+          name: `${label} ${Math.floor(matchIndex / 2) + 1}경기 승자`,
+          placeholder: true,
+        }
+      );
+
+      matches.push({
+        id: `${roundIndex + 1}-${Math.floor(matchIndex / 2) + 1}`,
+        player1,
+        player2,
+        isBye,
+        winner: autoWinner,
+        note: isBye && autoWinner ? `${autoWinner.name} 부전승` : "",
+      });
     }
 
-    openingMatches.push({
-      id: index / 2 + 1,
-      player1,
-      player2,
-      isBye,
-      note: isBye && autoAdvancePlayer ? `${autoAdvancePlayer.name} 부전승` : "",
+    rounds.push({
+      label,
+      subtitle: `${matchCount}경기`,
+      matches,
     });
+
+    currentPlayers = nextPlayers;
   }
 
   return {
     bracketSize,
+    totalRounds,
     byeCount,
-    actualMatchCount,
-    openingMatches,
+    rounds,
+    firstRoundMatchCount: rounds[0]?.matches.length || 0,
   };
 }
 
@@ -146,7 +175,7 @@ function buildBracket({ eventName, grade, gender, rawParticipants, shuffle }) {
     seed: index + 1,
   }));
 
-  const opening = createOpeningMatches(participants);
+  const tournament = createTournamentRounds(participants);
 
   return {
     id: `${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
@@ -157,10 +186,11 @@ function buildBracket({ eventName, grade, gender, rawParticipants, shuffle }) {
     shuffle,
     participantCount: participants.length,
     participants,
-    bracketSize: opening.bracketSize,
-    byeCount: opening.byeCount,
-    actualMatchCount: opening.actualMatchCount,
-    openingMatches: opening.openingMatches,
+    bracketSize: tournament.bracketSize,
+    byeCount: tournament.byeCount,
+    totalRounds: tournament.totalRounds,
+    firstRoundMatchCount: tournament.firstRoundMatchCount,
+    rounds: tournament.rounds,
     createdAt: new Date().toISOString(),
   };
 }
@@ -206,71 +236,182 @@ function renderEmptyState() {
   bracketStage.innerHTML = `
     <div class="empty-state">
       <p class="empty-kicker">Ready</p>
-      <h3>아직 생성된 첫 경기 대진표가 없습니다.</h3>
-      <p>왼쪽에서 학년, 성별, 참가자 명단을 입력하면 참가자 수에 맞는 첫 경기 편성표와 부전승 배정이 자동으로 만들어집니다.</p>
+      <h3>아직 생성된 토너먼트 대진표가 없습니다.</h3>
+      <p>왼쪽에서 학년, 성별, 참가자 명단을 입력하면 참가자 수에 맞는 토너먼트형 대진표가 자동으로 만들어집니다.</p>
     </div>
   `;
 }
 
-function renderPlayerCell(player) {
+function createLine(x1, y1, x2, y2) {
+  return { x1, y1, x2, y2 };
+}
+
+function offsetLines(lines, offsetX, offsetY) {
+  return lines.map((line) => ({
+    x1: line.x1 + offsetX,
+    y1: line.y1 + offsetY,
+    x2: line.x2 + offsetX,
+    y2: line.y2 + offsetY,
+  }));
+}
+
+function createBracketLayout(rounds) {
+  const cardWidth = 186;
+  const cardHeight = 88;
+  const columnGap = 96;
+  const rowGap = 24;
+  const topPadding = 78;
+  const sidePadding = 26;
+
+  const columns = [];
+  const lines = [];
+  let previousCenters = [];
+
+  rounds.forEach((round, roundIndex) => {
+    const x = sidePadding + roundIndex * (cardWidth + columnGap);
+    const nodes = round.matches.map((match, matchIndex) => {
+      const centerY =
+        roundIndex === 0
+          ? topPadding + cardHeight / 2 + matchIndex * (cardHeight + rowGap)
+          : (previousCenters[matchIndex * 2] + previousCenters[matchIndex * 2 + 1]) / 2;
+
+      return {
+        x,
+        y: centerY - cardHeight / 2,
+        centerY,
+        match,
+      };
+    });
+
+    columns.push({
+      label: round.label,
+      subtitle: round.subtitle,
+      x,
+      nodes,
+    });
+
+    previousCenters = nodes.map((node) => node.centerY);
+  });
+
+  for (let roundIndex = 0; roundIndex < columns.length - 1; roundIndex += 1) {
+    const currentNodes = columns[roundIndex].nodes;
+    const nextNodes = columns[roundIndex + 1].nodes;
+
+    nextNodes.forEach((nextNode, nextIndex) => {
+      const firstChild = currentNodes[nextIndex * 2];
+      const secondChild = currentNodes[nextIndex * 2 + 1];
+      const mergeX = firstChild.x + cardWidth + columnGap / 2;
+
+      lines.push(createLine(firstChild.x + cardWidth, firstChild.centerY, mergeX, firstChild.centerY));
+      lines.push(createLine(secondChild.x + cardWidth, secondChild.centerY, mergeX, secondChild.centerY));
+      lines.push(createLine(mergeX, firstChild.centerY, mergeX, secondChild.centerY));
+      lines.push(createLine(mergeX, nextNode.centerY, nextNode.x, nextNode.centerY));
+    });
+  }
+
+  const lastColumn = columns.at(-1);
+  const width = lastColumn ? lastColumn.x + cardWidth + sidePadding : 0;
+  const height = Math.max(...columns.flatMap((column) => column.nodes.map((node) => node.y + cardHeight)), 320) + 32;
+
+  return {
+    width,
+    height,
+    columns,
+    lines,
+  };
+}
+
+function renderTournamentPlayer(player, winner) {
   if (!player) {
     return `
-      <div class="opening-player-cell placeholder">
-        <span class="opening-player-name">BYE</span>
-        <span class="opening-player-meta">부전승 자리</span>
+      <div class="tree-player-slot placeholder">
+        <span class="tree-player-name">BYE</span>
+        <span class="tree-player-meta">부전승 자리</span>
       </div>
     `;
   }
 
+  const isPlaceholder = Boolean(player.placeholder);
+  const isWinner = Boolean(winner && !player.placeholder && winner.name === player.name);
+
   return `
-    <div class="opening-player-cell">
-      <span class="opening-player-name">${escapeHtml(player.name)}</span>
-      <span class="opening-player-meta">Seed ${escapeHtml(player.seed)}</span>
+    <div class="tree-player-slot ${isPlaceholder ? "placeholder" : ""} ${isWinner ? "winner" : ""}">
+      <span class="tree-player-name">${escapeHtml(player.name)}</span>
+      <span class="tree-player-meta">${isPlaceholder ? "승자 대기" : `Seed ${escapeHtml(player.seed ?? "-")}`}</span>
     </div>
   `;
 }
 
-function renderOpeningMatchCard(match) {
+function renderTreeNode(node) {
   return `
-    <article class="opening-match-card ${match.isBye ? "is-bye" : ""}">
-      <div class="opening-match-head">
-        <span class="opening-match-index">Match ${match.id}</span>
-        <span class="opening-match-badge ${match.isBye ? "bye" : "play"}">
-          ${match.isBye ? "부전승" : "첫 경기"}
-        </span>
+    <article class="tree-match-card ${node.match.isBye ? "is-bye" : ""}" style="left:${node.x}px; top:${node.y}px;">
+      <div class="tree-match-head">
+        <span class="tree-match-index">Match ${escapeHtml(node.match.id)}</span>
+        <span class="tree-match-state">${node.match.isBye ? "부전승" : "대진"}</span>
       </div>
-      <div class="opening-player-stack">
-        ${renderPlayerCell(match.player1)}
-        ${renderPlayerCell(match.player2)}
-      </div>
-      <p class="opening-match-note">
-        ${match.isBye ? escapeHtml(match.note) : `${match.id}번 첫 경기`}
-      </p>
+      ${renderTournamentPlayer(node.match.player1, node.match.winner)}
+      ${renderTournamentPlayer(node.match.player2, node.match.winner)}
+      <p class="tree-match-note">${node.match.note ? escapeHtml(node.match.note) : "승자 다음 라운드 진출"}</p>
     </article>
   `;
 }
 
-function renderOpeningBoard(bracket) {
-  const boardMarkup = bracket.openingMatches
-    .map((match) => renderOpeningMatchCard(match))
+function renderTreeLabels(columns) {
+  return columns
+    .map(
+      (column) => `
+        <div class="tree-round-pill" style="left:${column.x + 93}px;">
+          <strong>${escapeHtml(column.label)}</strong>
+          <span>${escapeHtml(column.subtitle)}</span>
+        </div>
+      `
+    )
     .join("");
+}
+
+function renderTreeLines(lines) {
+  return lines
+    .map(
+      (line) =>
+        `<line x1="${line.x1}" y1="${line.y1}" x2="${line.x2}" y2="${line.y2}" stroke="rgba(240, 230, 208, 0.88)" stroke-width="3" stroke-linecap="round" />`
+    )
+    .join("");
+}
+
+function renderTournamentBoard(bracket) {
+  const layout = createBracketLayout(bracket.rounds);
+  const labelsMarkup = renderTreeLabels(layout.columns);
+  const nodesMarkup = layout.columns.flatMap((column) => column.nodes.map((node) => renderTreeNode(node))).join("");
+  const linesMarkup = renderTreeLines(layout.lines);
+  const championX = layout.columns.at(-1)?.x + 93 || 0;
+  const championY = layout.height / 2;
 
   return `
-    <section class="opening-board-shell">
+    <section class="tournament-board-shell">
       <div class="bracket-visual-head">
         <div>
-          <p class="panel-kicker">Opening Matches</p>
-          <h4>첫 경기 편성표</h4>
+          <p class="panel-kicker">Tournament View</p>
+          <h4>토너먼트 대진표</h4>
         </div>
         <p>${escapeHtml(
           bracket.byeCount > 0
-            ? `${bracket.participantCount}명 기준으로 첫 경기 ${bracket.actualMatchCount}경기와 부전승 ${bracket.byeCount}개가 자동 배정됩니다.`
-            : `${bracket.participantCount}명 모두 첫 경기 편성으로 바로 배정됩니다.`
+            ? `${bracket.participantCount}명 기준 ${bracket.bracketSize}강 대진으로 편성되며, 부전승 ${bracket.byeCount}개가 자동 배정됩니다.`
+            : `${bracket.participantCount}명 기준 ${bracket.bracketSize}강 토너먼트로 바로 진행됩니다.`
         )}</p>
       </div>
 
-      <div class="opening-match-grid">
-        ${boardMarkup}
+      <div class="tournament-board-viewport">
+        <div class="tournament-tree" style="width:${layout.width}px; height:${layout.height}px;">
+          ${labelsMarkup}
+          <div class="tree-champion-mark" style="left:${championX}px; top:${championY - 84}px;">
+            <span>🏆</span>
+            <strong>Champion</strong>
+          </div>
+          <svg class="tree-connector-layer" viewBox="0 0 ${layout.width} ${layout.height}" preserveAspectRatio="none" aria-hidden="true">
+            ${linesMarkup}
+          </svg>
+          ${nodesMarkup}
+        </div>
       </div>
     </section>
   `;
@@ -287,7 +428,7 @@ function renderBracket() {
   const metaCards = [
     { label: "대회명", value: bracket.eventTitle },
     { label: "참가자", value: `${bracket.participantCount}명` },
-    { label: "첫 경기", value: `${bracket.actualMatchCount}경기` },
+    { label: "라운드", value: `${bracket.totalRounds}라운드` },
     { label: "부전승", value: `${bracket.byeCount}개` },
   ];
 
@@ -331,7 +472,7 @@ function renderBracket() {
             .join("")}
         </section>
 
-        ${renderOpeningBoard(bracket)}
+        ${renderTournamentBoard(bracket)}
       </section>
 
       <section class="participant-list">
@@ -356,16 +497,16 @@ function slugifyFileName(value) {
 }
 
 function buildExportFileName(bracket) {
-  const baseName = [bracket.eventTitle, bracket.divisionName, "opening-matches"]
+  const baseName = [bracket.eventTitle, bracket.divisionName, "tournament-bracket"]
     .map((item) => slugifyFileName(item))
     .filter(Boolean)
     .join("-");
 
-  return `${baseName || "tournament-opening-matches"}.jpg`;
+  return `${baseName || "tournament-bracket"}.jpg`;
 }
 
 function createExportSurface(bracket) {
-  const board = bracketStage.querySelector(".opening-board-shell");
+  const board = bracketStage.querySelector(".tournament-board-shell");
   if (!board) return null;
 
   const metaMarkup = [
@@ -390,7 +531,7 @@ function createExportSurface(bracket) {
     <div class="jpg-export-header">
       <p>BLACK BRACKET STUDIO</p>
       <h2>${escapeHtml(bracket.divisionName)}</h2>
-      <strong>${escapeHtml(bracket.eventTitle)} 첫 경기 편성표</strong>
+      <strong>${escapeHtml(bracket.eventTitle)} 토너먼트 대진표</strong>
     </div>
     <div class="jpg-export-meta">${metaMarkup}</div>
     <div class="jpg-export-board-wrap"></div>
@@ -457,13 +598,13 @@ function updateSummary() {
   const participantNames = getParticipantNames(participantsInput.value);
   const previewName = `${gradeInput.value} ${genderInput.value}부`;
   const bracketSize = participantNames.length >= 2 ? nextPowerOfTwo(participantNames.length) : 0;
-  const openingMatchCount = bracketSize ? bracketSize / 2 : 0;
+  const roundCount = bracketSize ? Math.log2(bracketSize) : 0;
   const byeCount = bracketSize ? bracketSize - participantNames.length : 0;
 
   divisionPreview.textContent = previewName;
   summaryCount.textContent = `${participantNames.length}명`;
-  summaryRounds.textContent = `${openingMatchCount}경기`;
-  summaryBracket.textContent = bracketSize ? `${bracketSize}명 편성` : "0명 편성";
+  summaryRounds.textContent = `${roundCount}라운드`;
+  summaryBracket.textContent = bracketSize ? `${bracketSize}강` : "0강";
   summaryByes.textContent = `${byeCount}개`;
 }
 
